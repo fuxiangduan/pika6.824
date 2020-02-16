@@ -10,7 +10,12 @@ package main
 // Please do not change this file.
 //
 
-import "../mr"
+import (
+	"../mr"
+	"strconv"
+	"strings"
+	"unicode"
+)
 import "plugin"
 import "os"
 import "fmt"
@@ -22,8 +27,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	mapf, reducef := loadPlugin(os.Args[1])
-
+	//mapf, reducef := loadPlugin(os.Args[1])
+	mapf, reducef := loadPluginDebug()
 	mr.Worker(mapf, reducef)
 }
 
@@ -48,4 +53,24 @@ func loadPlugin(filename string) (func(string, string) []mr.KeyValue, func(strin
 	reducef := xreducef.(func(string, []string) string)
 
 	return mapf, reducef
+}
+
+func loadPluginDebug() (func(string, string) []mr.KeyValue, func(string, []string) string) {
+	return func(filename string, contents string) []mr.KeyValue {
+			// function to detect word separators.
+			ff := func(r rune) bool { return !unicode.IsLetter(r) }
+
+			// split contents into an array of words.
+			words := strings.FieldsFunc(contents, ff)
+
+			kva := []mr.KeyValue{}
+			for _, w := range words {
+				kv := mr.KeyValue{w, "1"}
+				kva = append(kva, kv)
+			}
+			return kva
+		}, func(key string, values []string) string {
+			// return the number of occurrences of this word.
+			return strconv.Itoa(len(values))
+		}
 }
