@@ -63,7 +63,7 @@ func get(key string) string {
 
 func put(key string, val string) {
 	client := connect()
-	args := PutArgs{"subject", "6.824"}
+	args := PutArgs{"subject", "pika6.824"}
 	reply := PutReply{}
 	err := client.Call("KV.Put", &args, &reply)
 	if err != nil {
@@ -134,7 +134,7 @@ func (kv *KV) Put(args *PutArgs, reply *PutReply) error {
 func main() {
 	server()
 
-	put("subject", "6.824")
-	fmt.Printf("Put(subject, 6.824) done\n")
+	put("subject", "pika6.824")
+	fmt.Printf("Put(subject, pika6.824) done\n")
 	fmt.Printf("get(subject) -> %s\n", get("subject"))
 }
