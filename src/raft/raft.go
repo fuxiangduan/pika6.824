@@ -227,7 +227,12 @@ func (rf *Raft) initAllEnd() {
 	}
 }
 
-func (rf *Raft) becomeLeader() {}
+func (rf *Raft) becomeLeader() {
+	rf.mu.Lock()
+	rf.role = Leader
+	rf.mu.Unlock()
+
+}
 
 func (rf *Raft) leaderElection() {
 	rf.mu.Lock()
