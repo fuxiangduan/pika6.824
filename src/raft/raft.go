@@ -217,7 +217,7 @@ func (rf *Raft) runRpcServer() {
 	rf.rn.AddServer(rf.peers[rf.me].Endname, rs)
 }
 
-func (rf *Raft) initAllEnd() {
+func (rf *Raft) initAllCli() {
 	serverName := rf.peers[rf.me].Endname
 	for idx, peer := range rf.peers {
 		if idx != rf.me {
@@ -227,53 +227,54 @@ func (rf *Raft) initAllEnd() {
 	}
 }
 
-func (rf *Raft) becomeLeader() {}
+func (rf *Raft) convertToLeader() {
+	rf.mu.Lock()
+	rf.role = Leader
+	rf.mu.Unlock()
+}
 
-func (rf *Raft) leaderElection() {
+func (rf *Raft) convertToCandidate() {
 	rf.mu.Lock()
 	rf.role = Candidate
 	rf.currentTerm += 1
 	rf.mu.Unlock()
-
-	voteChan := make(chan struct{})
-	defer close(voteChan)
-	fail := make(chan struct{})
-	defer close(fail)
-	for idx, peer := range rf.peers {
-		if idx != rf.me {
-			go func() {
-				args := RequestVoteArgs{}
-				reply := RequestVoteReply{}
-				if ok := peer.Call("Raft.RequestVote", &args, &reply); ok {
-					if reply.voteGranted {
-						voteChan <- struct{}{}
-					} else {
-						fail <- struct{}{}
-						return
-					}
-				}
-			}()
-		}
-	}
-
 	etTimer := time.NewTimer(ElectionTimeout)
 	defer etTimer.Stop()
-	var voteNum int
-	select {
-	case <-voteChan:
-		voteNum += 1
-		if voteNum > len(rf.peers)/2 {
-			rf.becomeLeader()
+	for {
+		voteChan := make(chan struct{})
+		for idx, peer := range rf.peers {
+			if idx != rf.me {
+				go func() {
+					args := RequestVoteArgs{}
+					reply := RequestVoteReply{}
+					if ok := peer.Call("Raft.RequestVote", &args, &reply); ok {
+						if reply.voteGranted {
+							voteChan <- struct{}{}
+						}
+					}
+				}()
+			}
 		}
-	case <-etTimer.C:
-		rf.leaderElection()
-	case <-fail:
-		return
+		var voteNum int
+		select {
+		case <-voteChan:
+			voteNum += 1
+			if voteNum > len(rf.peers)/2 {
+				go rf.convertToLeader()
+				return
+			}
+		case <-etTimer.C:
+			etTimer.Reset(ElectionTimeout) // re election
+			break
+		}
 	}
-
 }
 
-func (rf *Raft) runElectionTrigger() {
+func (rf *Raft) convertToFollower(term int64) {
+	rf.mu.Lock()
+	rf.role = Follower
+	rf.currentTerm = term
+	rf.mu.Unlock()
 	electTimer := time.NewTimer(ElectionTimeout)
 	defer electTimer.Stop()
 	for {
@@ -281,7 +282,8 @@ func (rf *Raft) runElectionTrigger() {
 		case <-rf.heartbeat:
 			electTimer.Reset(ElectionTimeout)
 		case <-electTimer.C:
-			rf.leaderElection()
+			go rf.convertToCandidate()
+			return
 		case <-rf.rquit:
 			return
 		}
@@ -352,14 +354,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.rn = labrpc.MakeNetwork()
 	rf.heartbeat = make(chan struct{})
 	rf.rquit = make(chan struct{})
-	rf.role = Follower
 
 	go rf.runRpcServer()
-	go rf.initAllEnd()
-	go rf.runElectionTrigger()
+	go rf.initAllCli()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
 
+	go rf.convertToFollower(rf.currentTerm)
 	return rf
 }
